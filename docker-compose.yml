@@ -3,39 +3,59 @@ version: "3.8"
 services:
   bet_maker_db:
     image: postgres
+    container_name: bet_maker_db
     environment:
-      POSTGRES_USER: bet_maker_user
-      POSTGRES_PASSWORD: bet_maker_password
-      POSTGRES_DB: bet_maker_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
     volumes:
       - pgdata_bet_maker:/var/lib/postgresql/data
 
-
-  bet_maker:
-    build: ./bet-maker
-    ports:
-      - "8000:8000"
-    depends_on:
-      - bet_maker_db
-
-
   line_provider_db:
     image: postgres
+    container_name: line_provider_db
     environment:
-      POSTGRES_USER: line_provider_user
-      POSTGRES_PASSWORD: line_provider_password
-      POSTGRES_DB: line_provider_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5434:5432"
     volumes:
       - pgdata_line_provider:/var/lib/postgresql/data
 
+  bet_maker:
+    build: ./bet-maker
+    container_name: bet_maker
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./bet-maker/.env.bet_maker
+    depends_on:
+      - bet_maker_db
+      - rabbitmq
 
   line_provider:
     build: ./line-provider
+    container_name: line_provider
     ports:
-      - "8000:8000"
+      - "8001:8001"
+    env_file:
+      - ./line-provider/.env.line_provider
     depends_on:
       - line_provider_db
+      - rabbitmq
 
+  rabbitmq:
+    image: rabbitmq
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
 
 volumes:
   pgdata_bet_maker:

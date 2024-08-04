@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+venv/
+.env
+.vscode/
+.env
+*.log
+*.bak
+*.swp
+.idea/
+.editorconfig
+versions/

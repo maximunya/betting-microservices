@@ -7,7 +7,6 @@ __pycache__/
 
 # Environment files
 .env
-.env.docker
 
 # Virtual environment
 venv/
@@ -34,11 +33,12 @@ coverage.xml
 Thumbs.db
 Desktop.ini
 
-# FastAPI specific (if any specific files or folders used)
-alembic_version/
+# FastAPI
+versions/
 
 # Logs
-*.log
+logs/*
+!logs/.gitkeep
 
 # Other
 *.bak
