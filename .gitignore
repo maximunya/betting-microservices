@@ -1,0 +1,50 @@
+# Python files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+
+# Environment files
+.env
+.env.docker
+
+# Virtual environment
+venv/
+
+# Pytest
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+*.pyd
+*.log
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Mac OS X
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# FastAPI specific (if any specific files or folders used)
+alembic_version/
+
+# Logs
+*.log
+
+# Other
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# Git
+.git/

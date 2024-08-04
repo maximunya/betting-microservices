@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  bet_maker_db:
+    image: postgres
+    environment:
+      POSTGRES_USER: bet_maker_user
+      POSTGRES_PASSWORD: bet_maker_password
+      POSTGRES_DB: bet_maker_db
+    volumes:
+      - pgdata_bet_maker:/var/lib/postgresql/data
+
+
+  bet_maker:
+    build: ./bet-maker
+    ports:
+      - "8000:8000"
+    depends_on:
+      - bet_maker_db
+
+
+  line_provider_db:
+    image: postgres
+    environment:
+      POSTGRES_USER: line_provider_user
+      POSTGRES_PASSWORD: line_provider_password
+      POSTGRES_DB: line_provider_db
+    volumes:
+      - pgdata_line_provider:/var/lib/postgresql/data
+
+
+  line_provider:
+    build: ./line-provider
+    ports:
+      - "8000:8000"
+    depends_on:
+      - line_provider_db
+
+
+volumes:
+  pgdata_bet_maker:
+  pgdata_line_provider:
