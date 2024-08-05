@@ -3,7 +3,11 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from redis import asyncio as aioredis
 
+from .config import REDIS_HOST, REDIS_PORT
 from .rabbitmq import consume
 from .routers import bets, events
 
@@ -27,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_event():
+    redis = aioredis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", encoding="utf8", decode_responses=True)
+    FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+
     try:
         asyncio.create_task(consume())
         logger.info("RabbitMQ consumer started successfully.")

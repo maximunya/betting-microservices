@@ -1,9 +1,11 @@
 import json
 import logging
+import time
 import uuid
 from typing import List
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi_cache.decorator import cache
 
 from ..config import REQUEST_QUEUE_NAME
 from ..rabbitmq import consume_response_from_queue, send_message
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=List[EventResponse])
+@cache(expire=30)
 async def request_available_events():
     try:
         correlation_id = str(uuid.uuid4())
