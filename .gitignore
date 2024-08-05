@@ -37,7 +37,7 @@ Desktop.ini
 versions/
 
 # Logs
-logs/*
+*.log
 !logs/.gitkeep
 
 # Other
