@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .rabbitmq import consume
 from .router import events_router
 
-app = FastAPI(title="Line Provider")
+app = FastAPI(title="Line Provider", root_path="/line-provider")
 
 origins = [
     "*",

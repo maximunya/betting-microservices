@@ -12,7 +12,7 @@ from .config import REDIS_HOST, REDIS_PORT
 from .rabbitmq import consume
 from .routers import bets, events
 
-app = FastAPI(title="Bet Maker")
+app = FastAPI(title="Bet Maker", root_path="/bet-maker")
 
 origins = [
     "*",
