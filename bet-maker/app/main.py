@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
@@ -12,6 +13,18 @@ from .rabbitmq import consume
 from .routers import bets, events
 
 app = FastAPI(title="Bet Maker")
+
+origins = [
+    "*",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(bets.router, prefix="/bets", tags=["bets"])
 app.include_router(events.router, prefix="/events", tags=["events"])

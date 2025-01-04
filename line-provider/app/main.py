@@ -3,11 +3,24 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .rabbitmq import consume
 from .router import events_router
 
 app = FastAPI(title="Line Provider")
+
+origins = [
+    "*",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(events_router, prefix="/events", tags=["events"])
 
