@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_event():
     try:
+        await asyncio.sleep(5)
         asyncio.create_task(consume())
         logger.info("RabbitMQ consumer started successfully.")
     except Exception as e:
