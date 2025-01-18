@@ -1,13 +1,20 @@
-FROM python:3.11
+FROM python:3.12-slim-bullseye
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV POETRY_VERSION=1.8.5 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1
+
+RUN apt-get update && apt-get install -y curl build-essential libpq-dev
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+
+ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY pyproject.toml poetry.lock ./
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN poetry install --no-root --no-dev
 
 COPY . .
 

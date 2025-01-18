@@ -48,7 +48,7 @@ async def startup_event():
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
 
     try:
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
         asyncio.create_task(consume())
         logger.info("RabbitMQ consumer started successfully.")
     except Exception as e:
