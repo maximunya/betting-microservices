@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Enum, Integer, Numeric, Table
 
-from .database import metadata
-from .schemas import BetPrediction, BetStatus
+from app.database import metadata
+from app.schemas import BetPrediction, BetStatus
 
 bets = Table(
     "bets",

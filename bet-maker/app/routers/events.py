@@ -1,22 +1,20 @@
 import json
 import logging
-import time
 import uuid
-from typing import List
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi_cache.decorator import cache
 
-from ..config import REQUEST_QUEUE_NAME
-from ..rabbitmq import consume_response_from_queue, send_message
-from ..schemas import EventResponse
+from app.config import REQUEST_QUEUE_NAME
+from app.rabbitmq import consume_response_from_queue, send_message
+from app.schemas import EventResponse
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
 
-@router.get("/", response_model=List[EventResponse])
+@router.get("/", response_model=list[EventResponse])
 @cache(expire=30)
 async def request_available_events():
     try:
@@ -29,7 +27,7 @@ async def request_available_events():
             correlation_id=correlation_id,
         )
         logger.info(
-            f"Sent request for available events with correlation_id: {correlation_id}"
+            f"Sent request for available events with correlation_id: {correlation_id}",
         )
 
         response_data = await consume_response_from_queue(correlation_id)
@@ -41,14 +39,20 @@ async def request_available_events():
                 detail="Error while getting available events has occured.",
             )
 
-        logger.info(
-            f"Received response for correlation_id: {correlation_id} with {len(response_data)} events."
+    except json.JSONDecodeError:
+        logger.exception(f"Error decoding JSON response for correlation_id: {correlation_id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error decoding response data.",
         )
-        return response_data
-
-    except Exception as e:
-        logger.error(f"Error during request: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Error during request")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error has occured.",
         )
+    else:
+        logger.info(
+            f"Received response for correlation_id: {correlation_id} with {len(response_data)} events.",
+        )
+        return response_data

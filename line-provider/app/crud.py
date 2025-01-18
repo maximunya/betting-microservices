@@ -1,7 +1,6 @@
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any
 
 from fastapi import status, HTTPException
 from sqlalchemy import and_, update
@@ -129,7 +128,7 @@ async def update_event_crud(
     if updating_event is None:
         logger.error(f"Event with id {event_id} not found", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Event not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
 
     old_status = updating_event["status"]

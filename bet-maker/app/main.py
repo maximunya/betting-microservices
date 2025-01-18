@@ -8,9 +8,9 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
 
-from .config import REDIS_HOST, REDIS_PORT
-from .rabbitmq import consume
-from .routers import bets, events
+from app.config import REDIS_HOST, REDIS_PORT
+from app.rabbitmq import consume
+from app.routers import bets, events
 
 app = FastAPI(title="Bet Maker", root_path="/bet-maker")
 
@@ -43,18 +43,20 @@ logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
-async def startup_event():
-    redis = aioredis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", encoding="utf8", decode_responses=True)
+async def startup_event() -> None:
+    redis = aioredis.from_url(
+        f"redis://{REDIS_HOST}:{REDIS_PORT}", encoding="utf8", decode_responses=True,
+    )
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
 
     try:
         await asyncio.sleep(10)
         asyncio.create_task(consume())
         logger.info("RabbitMQ consumer started successfully.")
-    except Exception as e:
-        logger.error(f"Failed to start RabbitMQ consumer: {e}")
+    except Exception:
+        logger.exception("Failed to start RabbitMQ consumer")
 
 
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> None:
     logger.info("Application is shutting down.")

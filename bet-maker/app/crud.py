@@ -3,16 +3,15 @@ import logging
 import uuid
 from decimal import Decimal
 
-from fastapi import status, HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import and_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from .config import REQUEST_QUEUE_NAME
-from .models import bets
-from .schemas import (BetCreate, BetPrediction, BetResponse, BetStatus,
-                      EventStatus)
+from app.config import REQUEST_QUEUE_NAME
+from app.models import bets
+from app.schemas import BetCreate, BetPrediction, BetResponse, BetStatus, EventStatus
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +25,13 @@ async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
         await send_message(
             routing_key="bet-request",
             message=json.dumps(
-                {"request": "get_available_event_detail", "event_id": bet.event_id}
+                {"request": "get_available_event_detail", "event_id": bet.event_id},
             ),
             queue_name=REQUEST_QUEUE_NAME,
             correlation_id=correlation_id,
         )
         logger.info(
-            f"Sent request for available event detail with correlation_id: {correlation_id}"
+            f"Sent request for available event detail with correlation_id: {correlation_id}",
         )
 
         response_data = await consume_response_from_queue(correlation_id)
@@ -73,9 +72,9 @@ async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
 
         return BetResponse(**created_bet)
 
-    except SQLAlchemyError as e:
+    except SQLAlchemyError:
         await session.rollback()
-        logger.error(f"Database error occurred while creating bet: {e}", exc_info=True)
+        logger.exception("Database error occurred while creating bet")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error occurred",
@@ -83,7 +82,9 @@ async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
 
 
 async def get_all_bets(
-    session: AsyncSession, offset: int = 0, limit: int = 10
+    session: AsyncSession,
+    offset: int = 0,
+    limit: int = 10,
 ) -> list[BetResponse]:
     query = select(bets).offset(offset).limit(limit).order_by(bets.c.id)
 
@@ -92,8 +93,8 @@ async def get_all_bets(
         bets_list = result.mappings().fetchall()
         return [BetResponse(**bet) for bet in bets_list]
 
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while retrieving bets: {e}", exc_info=True)
+    except SQLAlchemyError:
+        logger.exception("Database error while retrieving bets")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error occurred",
@@ -101,7 +102,9 @@ async def get_all_bets(
 
 
 async def update_bets_status(
-    session: AsyncSession, event_id: int, new_event_status: EventStatus
+    session: AsyncSession,
+    event_id: int,
+    new_event_status: EventStatus,
 ) -> None:
     winning_prediction = (
         BetPrediction.FIRST_TEAM_WIN
@@ -115,7 +118,7 @@ async def update_bets_status(
                 and_(
                     bets.c.event_id == event_id,
                     bets.c.bet_prediction == winning_prediction,
-                )
+                ),
             )
             .values(status=BetStatus.WON)
         )
@@ -128,7 +131,7 @@ async def update_bets_status(
                 and_(
                     bets.c.event_id == event_id,
                     bets.c.bet_prediction != winning_prediction,
-                )
+                ),
             )
             .values(status=BetStatus.LOST)
         )
@@ -137,11 +140,10 @@ async def update_bets_status(
         await session.commit()
         logger.info(f"Bet statuses successfully updated for event_id: {event_id}")
 
-    except SQLAlchemyError as e:
+    except SQLAlchemyError:
         await session.rollback()
-        logger.error(
-            f"Error occurred while updating bet statuses for event_id: {event_id}. Error: {str(e)}",
-            exc_info=True,
+        logger.exception(
+            f"Error occurred while updating bet statuses for event_id: {event_id}",
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
