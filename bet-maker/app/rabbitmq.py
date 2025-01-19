@@ -1,8 +1,10 @@
 import asyncio
 import json
 import logging
+from typing import Any
 
-from aio_pika import Connection, ExchangeType, IncomingMessage, Message, connect_robust
+from aio_pika import ExchangeType, Message, connect_robust
+from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 
 from app.config import (
     EVENT_UPDATE_QUEUE_NAME,
@@ -20,7 +22,7 @@ RABBITMQ_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/"
 logger = logging.getLogger(__name__)
 
 
-async def get_rabbit_connection() -> Connection:
+async def get_rabbit_connection() -> AbstractRobustConnection:
     return await connect_robust(RABBITMQ_URL)
 
 
@@ -50,7 +52,9 @@ async def send_message(
         )
 
 
-async def process_event_update_message(message: IncomingMessage) -> None:
+async def process_event_update_message(
+    message: AbstractIncomingMessage,
+) -> None:
     async with message.process():
         try:
             event_data = json.loads(message.body.decode())
@@ -68,7 +72,7 @@ async def process_event_update_message(message: IncomingMessage) -> None:
             logger.exception("Error processing message")
 
 
-async def consume_response_from_queue(correlation_id: str) -> dict | None:
+async def consume_response_from_queue(correlation_id: str) -> dict[Any, Any] | None:
     connection = await get_rabbit_connection()
     async with connection, connection.channel() as channel:
         event_response_queue = await channel.declare_queue(
@@ -79,7 +83,9 @@ async def consume_response_from_queue(correlation_id: str) -> dict | None:
             async with message.process():
                 if message.correlation_id == correlation_id:
                     try:
-                        response_data = json.loads(message.body.decode())
+                        response_data: dict[Any, Any] | None = json.loads(
+                            message.body.decode(),
+                        )
                     except Exception:
                         logger.exception("Error processing response")
                     else:

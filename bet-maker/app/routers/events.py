@@ -14,9 +14,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/", response_model=list[EventResponse])
+@router.get("/")
 @cache(expire=30)
-async def request_available_events():
+async def request_available_events() -> list[EventResponse]:
     try:
         correlation_id = str(uuid.uuid4())
 
@@ -32,7 +32,7 @@ async def request_available_events():
 
         response_data = await consume_response_from_queue(correlation_id)
 
-        if "error" in response_data:
+        if response_data and "error" in response_data:
             logger.error(f"No response received for correlation_id: {correlation_id}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -40,7 +40,9 @@ async def request_available_events():
             )
 
     except json.JSONDecodeError:
-        logger.exception(f"Error decoding JSON response for correlation_id: {correlation_id}")
+        logger.exception(
+            f"Error decoding JSON response for correlation_id: {correlation_id}",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error decoding response data.",
@@ -52,7 +54,12 @@ async def request_available_events():
             detail="Unexpected error has occured.",
         )
     else:
+        if response_data is None:
+            logger.info(
+                f"Received response for correlation_id: {correlation_id} with no events.",
+            )
+            return []
         logger.info(
             f"Received response for correlation_id: {correlation_id} with {len(response_data)} events.",
         )
-        return response_data
+        return [EventResponse(**event) for event in response_data]

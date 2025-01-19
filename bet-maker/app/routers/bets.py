@@ -13,10 +13,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/", response_model=BetResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def place_bet(
-    bet: BetCreate, session: Annotated[AsyncSession, Depends(get_async_session)],
-):
+    bet: BetCreate,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> BetResponse:
     try:
         return await crud.create_bet(bet, session)
     except HTTPException:
@@ -29,12 +30,12 @@ async def place_bet(
         )
 
 
-@router.get("/", response_model=list[BetResponse])
+@router.get("/")
 async def list_bets(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     offset: int = 0,
     limit: int = 10,
-):
+) -> list[BetResponse]:
     try:
         return await crud.get_all_bets(session, offset, limit)
     except HTTPException:

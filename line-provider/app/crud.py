@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 
-from fastapi import status, HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import and_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +53,7 @@ async def create_event_crud(session: AsyncSession, event: EventCreate) -> EventR
 
 
 async def get_all_events_crud(
-    session: AsyncSession, offset: int = 0, limit: int = 10
+    session: AsyncSession, offset: int = 0, limit: int = 10,
 ) -> list[EventResponse]:
     query = select(events).offset(offset).limit(limit).order_by(events.c.id)
 
@@ -82,18 +82,18 @@ async def get_available_events(session: AsyncSession) -> list[EventResponse] | N
 
     except SQLAlchemyError as e:
         logger.error(
-            f"Database error while fetching available events: {e}", exc_info=True
+            f"Database error while fetching available events: {e}", exc_info=True,
         )
         return None
 
 
 async def get_available_event_detail(
-    session: AsyncSession, event_id: int
+    session: AsyncSession, event_id: int,
 ) -> EventResponse | None:
     current_time = datetime.now()
 
     query = select(events).where(
-        and_(events.c.id == event_id, events.c.deadline > current_time)
+        and_(events.c.id == event_id, events.c.deadline > current_time),
     )
 
     try:
@@ -102,7 +102,7 @@ async def get_available_event_detail(
 
         if event is None:
             logger.warning(
-                f"Event with ID {event_id} not found or deadline has passed."
+                f"Event with ID {event_id} not found or deadline has passed.",
             )
             return None
 
@@ -110,7 +110,7 @@ async def get_available_event_detail(
 
     except SQLAlchemyError as e:
         logger.error(
-            f"Database error while fetching available event detail: {e}", exc_info=True
+            f"Database error while fetching available event detail: {e}", exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -119,7 +119,7 @@ async def get_available_event_detail(
 
 
 async def update_event_crud(
-    session: AsyncSession, event_id: int, event_update: EventUpdate
+    session: AsyncSession, event_id: int, event_update: EventUpdate,
 ) -> EventResponse:
     query = select(events).where(events.c.id == event_id)
     result = await session.execute(query)
@@ -128,7 +128,7 @@ async def update_event_crud(
     if updating_event is None:
         logger.error(f"Event with id {event_id} not found", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found",
         )
 
     old_status = updating_event["status"]
@@ -155,7 +155,7 @@ async def update_event_crud(
 
         if updated_event is None:
             logger.error(
-                f"Event with id {event_id} not found after update", exc_info=True
+                f"Event with id {event_id} not found after update", exc_info=True,
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -177,14 +177,14 @@ async def update_event_crud(
                     )
                 except Exception as e:
                     logger.error(
-                        f"Failed to send status update message: {e}", exc_info=True
+                        f"Failed to send status update message: {e}", exc_info=True,
                     )
 
         return EventResponse(**updated_event)
 
     except SQLAlchemyError as e:
         await session.rollback()
-        logger.error(f"Database error while updating event {event_id}: {e}")
+        logger.exception(f"Database error while updating event {event_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error occurred",

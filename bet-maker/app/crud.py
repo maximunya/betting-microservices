@@ -1,7 +1,7 @@
 import json
 import logging
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, update
@@ -16,43 +16,69 @@ from app.schemas import BetCreate, BetPrediction, BetResponse, BetStatus, EventS
 logger = logging.getLogger(__name__)
 
 
-async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
-    from .rabbitmq import consume_response_from_queue, send_message
+async def send_bet_request(bet_event_id: int, correlation_id: str) -> None:
+    """Отправка запроса на получение данных события."""
+    from app.rabbitmq import send_message
 
-    correlation_id = str(uuid.uuid4())
+    await send_message(
+        routing_key="bet-request",
+        message=json.dumps(
+            {"request": "get_available_event_detail", "event_id": bet_event_id},
+        ),
+        queue_name=REQUEST_QUEUE_NAME,
+        correlation_id=correlation_id,
+    )
+    logger.info(
+        f"Sent request for available event detail with correlation_id: {correlation_id}",
+    )
 
-    try:
-        await send_message(
-            routing_key="bet-request",
-            message=json.dumps(
-                {"request": "get_available_event_detail", "event_id": bet.event_id},
-            ),
-            queue_name=REQUEST_QUEUE_NAME,
-            correlation_id=correlation_id,
-        )
-        logger.info(
-            f"Sent request for available event detail with correlation_id: {correlation_id}",
-        )
 
-        response_data = await consume_response_from_queue(correlation_id)
+async def get_event_details(correlation_id: str) -> dict[str, str] | None:
+    """Получение данных из очереди."""
+    from app.rabbitmq import consume_response_from_queue
 
-        if "error" in response_data:
-            logger.error(f"{response_data['error']}. event_id: {bet.event_id}")
+    return await consume_response_from_queue(correlation_id)
+
+
+def validate_coefficients(
+    response_data: dict[str, str] | None,
+) -> tuple[Decimal, Decimal]:
+    """Проверка и преобразование коэффициентов."""
+    if response_data:
+        coef_1st_team_win = response_data.get("coef_1st_team_win")
+        coef_2nd_team_win = response_data.get("coef_2nd_team_win")
+
+        if coef_1st_team_win is not None and coef_2nd_team_win is not None:
+            try:
+                return Decimal(coef_1st_team_win), Decimal(coef_2nd_team_win)
+            except (ValueError, TypeError, InvalidOperation):
+                logger.exception("Invalid value for coefficient")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid coefficient value provided.",
+                )
+        else:
+            logger.error("Missing coefficients")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Available event not found.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required coefficients for the event.",
             )
-
-        coef_1st_team_win = Decimal(response_data.get("coef_1st_team_win"))
-        coef_2nd_team_win = Decimal(response_data.get("coef_2nd_team_win"))
-
-        coefficient = (
-            coef_1st_team_win
-            if bet.bet_prediction == "FIRST_TEAM_WIN"
-            else coef_2nd_team_win
+    else:
+        logger.error("Response data is None")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve event details.",
         )
-        possible_winning = Decimal(bet.amount) * coefficient
 
+
+async def insert_bet(
+    session: AsyncSession,
+    bet: BetCreate,
+    coefficient: Decimal,
+    possible_winning: Decimal,
+) -> BetResponse:
+    """Вставка ставки в базу данных."""
+    try:
         query = (
             bets.insert()
             .values(
@@ -70,8 +96,6 @@ async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
         await session.commit()
         created_bet = result.mappings().fetchone()
 
-        return BetResponse(**created_bet)
-
     except SQLAlchemyError:
         await session.rollback()
         logger.exception("Database error occurred while creating bet")
@@ -79,6 +103,35 @@ async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error occurred",
         )
+    else:
+        return BetResponse(**created_bet)
+
+
+async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
+    correlation_id = str(uuid.uuid4())
+
+    await send_bet_request(bet.event_id, correlation_id)
+
+    response_data = await get_event_details(correlation_id)
+
+    coef_1st_team_win, coef_2nd_team_win = validate_coefficients(response_data)
+
+    coefficient = (
+        coef_1st_team_win
+        if bet.bet_prediction == "FIRST_TEAM_WIN"
+        else coef_2nd_team_win
+    )
+    try:
+        bet_amount = Decimal(bet.amount)
+    except (ValueError, TypeError, InvalidOperation):
+        logger.exception(f"Invalid bet amount: {bet.amount}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid bet amount provided.",
+        )
+    possible_winning = bet_amount * coefficient
+
+    return await insert_bet(session, bet, coefficient, possible_winning)
 
 
 async def get_all_bets(
@@ -86,9 +139,8 @@ async def get_all_bets(
     offset: int = 0,
     limit: int = 10,
 ) -> list[BetResponse]:
-    query = select(bets).offset(offset).limit(limit).order_by(bets.c.id)
-
     try:
+        query = select(bets).offset(offset).limit(limit).order_by(bets.c.id)
         result = await session.execute(query)
         bets_list = result.mappings().fetchall()
         return [BetResponse(**bet) for bet in bets_list]

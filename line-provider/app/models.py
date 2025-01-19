@@ -1,8 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import (TIMESTAMP, Column, Enum, Integer, MetaData, Numeric,
-                        String, Table)
+from sqlalchemy import TIMESTAMP, Column, Enum, Integer, MetaData, Numeric, String, Table
 
 from .schemas import EventStatus
 

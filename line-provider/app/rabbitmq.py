@@ -3,13 +3,10 @@ import json
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Union
 
-from aio_pika import (Connection, ExchangeType, IncomingMessage, Message,
-                      connect_robust)
+from aio_pika import Connection, ExchangeType, IncomingMessage, Message, connect_robust
 
-from .config import (EXCHANGE_NAME, RABBITMQ_HOST, RABBITMQ_PASS,
-                     RABBITMQ_USER, REQUEST_QUEUE_NAME, RESPONSE_QUEUE_NAME)
+from .config import EXCHANGE_NAME, RABBITMQ_HOST, RABBITMQ_PASS, RABBITMQ_USER, REQUEST_QUEUE_NAME, RESPONSE_QUEUE_NAME
 from .database import get_async_session
 
 RABBITMQ_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/"
@@ -27,32 +24,32 @@ def custom_json_serializer(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     logger.error(f"Object of type {obj.__class__.__name__} is not JSON serializable")
-    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+    msg = f"Object of type {obj.__class__.__name__} is not JSON serializable"
+    raise TypeError(msg)
 
 
 async def send_message(
     routing_key: str,
-    message: Union[str, bytes],
+    message: str | bytes,
     queue_name: str,
-    correlation_id: str = None,
+    correlation_id: str | None = None,
 ):
     connection = await get_rabbit_connection()
-    async with connection:
-        async with connection.channel() as channel:
-            exchange = await channel.declare_exchange(
-                EXCHANGE_NAME, ExchangeType.DIRECT, durable=True
-            )
+    async with connection, connection.channel() as channel:
+        exchange = await channel.declare_exchange(
+            EXCHANGE_NAME, ExchangeType.DIRECT, durable=True,
+        )
 
-            queue = await channel.declare_queue(queue_name, durable=True)
-            await queue.bind(exchange, routing_key=routing_key)
+        queue = await channel.declare_queue(queue_name, durable=True)
+        await queue.bind(exchange, routing_key=routing_key)
 
-            await exchange.publish(
-                Message(
-                    body=message.encode() if isinstance(message, str) else message,
-                    correlation_id=correlation_id,
-                ),
-                routing_key=routing_key,
-            )
+        await exchange.publish(
+            Message(
+                body=message.encode() if isinstance(message, str) else message,
+                correlation_id=correlation_id,
+            ),
+            routing_key=routing_key,
+        )
 
 
 async def process_request_message(message: IncomingMessage):
@@ -85,10 +82,11 @@ async def process_request_message(message: IncomingMessage):
 
                 else:
                     logger.error(f"Unsupported request type: {request_type}")
-                    raise ValueError(f"Unsupported request type: {request_type}")
+                    msg = f"Unsupported request type: {request_type}"
+                    raise ValueError(msg)
 
                 response_message = json.dumps(
-                    response_data, default=custom_json_serializer
+                    response_data, default=custom_json_serializer,
                 )
 
                 await send_message(

@@ -43,7 +43,7 @@ async def startup_event():
         asyncio.create_task(consume())
         logger.info("RabbitMQ consumer started successfully.")
     except Exception as e:
-        logger.error(f"Failed to start RabbitMQ consumer: {e}")
+        logger.exception(f"Failed to start RabbitMQ consumer: {e}")
 
 
 @app.on_event("shutdown")
