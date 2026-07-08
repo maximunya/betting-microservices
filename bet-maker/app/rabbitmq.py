@@ -1,15 +1,11 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Union
+import uuid
 
-from aio_pika import (Connection, ExchangeType, IncomingMessage, Message,
-                      connect_robust)
+from aio_pika import Connection, ExchangeType, Message, connect_robust
 
-from .config import (EVENT_UPDATE_QUEUE_NAME, EXCHANGE_NAME, RABBITMQ_HOST,
-                     RABBITMQ_PASS, RABBITMQ_USER, RESPONSE_QUEUE_NAME)
-from .crud import update_bets_status
-from .database import get_async_session
+from .config import EXCHANGE_NAME, RABBITMQ_HOST, RABBITMQ_PASS, RABBITMQ_USER
 
 RABBITMQ_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/"
 
@@ -20,73 +16,54 @@ async def get_rabbit_connection() -> Connection:
     return await connect_robust(RABBITMQ_URL)
 
 
-async def send_message(
-    routing_key: str, message: Union[str, bytes], queue_name: str, correlation_id: str
-) -> None:
+async def rpc_call(
+    routing_key: str, queue_name: str, payload: dict, timeout: float = 10.0
+) -> dict:
+    """
+    Request/response over RabbitMQ using a private, auto-deleted reply queue
+    per call, so concurrent callers can never consume each other's responses
+    (unlike scanning one shared response queue), and a timeout so a caller
+    can't hang forever if nothing ever replies.
+    """
     connection = await get_rabbit_connection()
-    async with connection:
-        async with connection.channel() as channel:
-            exchange = await channel.declare_exchange(
-                EXCHANGE_NAME, ExchangeType.DIRECT, durable=True
-            )
-
-            queue = await channel.declare_queue(queue_name, durable=True)
-            await queue.bind(exchange, routing_key=routing_key)
-
-            await exchange.publish(
-                Message(
-                    body=message.encode() if isinstance(message, str) else message,
-                    correlation_id=correlation_id,
-                ),
-                routing_key=routing_key,
-            )
-
-
-async def process_event_update_message(message: IncomingMessage) -> None:
-    async with message.process():
-        try:
-            event_data = json.loads(message.body.decode())
-            event_id = event_data["event_id"]
-            new_status = event_data["new_status"]
-
-            logger.info(
-                f"Received event update: ID={event_id}, New Status={new_status}"
-            )
-
-            async for session in get_async_session():
-                await update_bets_status(session, event_id, new_status)
-
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
-
-
-async def consume_response_from_queue(correlation_id: str) -> Optional[dict]:
-    connection = await get_rabbit_connection()
-    async with connection:
-        async with connection.channel() as channel:
-            event_response_queue = await channel.declare_queue(
-                RESPONSE_QUEUE_NAME, durable=True
-            )
-            async for message in event_response_queue.iterator():
-                async with message.process():
-                    if message.correlation_id == correlation_id:
-                        try:
-                            response_data = json.loads(message.body.decode())
-                            logger.info(f"Received available events: {response_data}")
-                            return response_data
-                        except Exception as e:
-                            logger.error(f"Error processing response: {e}")
-
-
-async def consume() -> None:
-    connection = await connect_robust(RABBITMQ_URL)
     async with connection:
         channel = await connection.channel()
+        callback_queue = await channel.declare_queue(exclusive=True, auto_delete=True)
 
-        event_updates_queue = await channel.declare_queue(
-            EVENT_UPDATE_QUEUE_NAME, durable=True
+        exchange = await channel.declare_exchange(
+            EXCHANGE_NAME, ExchangeType.DIRECT, durable=True
         )
-        await event_updates_queue.consume(process_event_update_message)
-        logger.info("Consuming messages from event updates queue...")
+        request_queue = await channel.declare_queue(queue_name, durable=True)
+        await request_queue.bind(exchange, routing_key=routing_key)
 
-        await asyncio.Future()
+        correlation_id = str(uuid.uuid4())
+        await exchange.publish(
+            Message(
+                body=json.dumps(payload).encode(),
+                correlation_id=correlation_id,
+                reply_to=callback_queue.name,
+            ),
+            routing_key=routing_key,
+        )
+        logger.info(
+            f"Sent RPC request '{routing_key}' (correlation_id={correlation_id})"
+        )
+
+        try:
+            async with callback_queue.iterator() as queue_iter:
+                async with asyncio.timeout(timeout):
+                    async for message in queue_iter:
+                        async with message.process():
+                            if message.correlation_id == correlation_id:
+                                logger.info(
+                                    f"Received RPC response (correlation_id={correlation_id})"
+                                )
+                                return json.loads(message.body.decode())
+        except TimeoutError:
+            logger.error(
+                f"RPC call '{routing_key}' timed out after {timeout}s "
+                f"(correlation_id={correlation_id})"
+            )
+            raise TimeoutError(
+                f"No response received for '{routing_key}' within {timeout}s"
+            )

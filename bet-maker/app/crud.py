@@ -1,9 +1,7 @@
-import json
 import logging
-import uuid
 from decimal import Decimal
 
-from fastapi import status, HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import and_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,62 +9,59 @@ from sqlalchemy.future import select
 
 from .config import REQUEST_QUEUE_NAME
 from .models import bets
-from .schemas import (BetCreate, BetPrediction, BetResponse, BetStatus,
-                      EventStatus)
+from .rabbitmq import rpc_call
+from .schemas import BetCreate, BetPrediction, BetResponse, BetStatus, EventStatus
 
 logger = logging.getLogger(__name__)
 
 
 async def create_bet(bet: BetCreate, session: AsyncSession) -> BetResponse:
-    from .rabbitmq import consume_response_from_queue, send_message
+    try:
+        response_data = await rpc_call(
+            routing_key="bet-request",
+            queue_name=REQUEST_QUEUE_NAME,
+            payload={"request": "get_available_event_detail", "event_id": bet.event_id},
+        )
+    except TimeoutError as e:
+        logger.error(
+            f"Timed out waiting for event detail. event_id: {bet.event_id}. {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Line provider service did not respond in time.",
+        )
 
-    correlation_id = str(uuid.uuid4())
+    if "error" in response_data:
+        logger.error(f"{response_data['error']}. event_id: {bet.event_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Available event not found.",
+        )
+
+    coef_1st_team_win = Decimal(response_data.get("coef_1st_team_win"))
+    coef_2nd_team_win = Decimal(response_data.get("coef_2nd_team_win"))
+
+    coefficient = (
+        coef_1st_team_win
+        if bet.bet_prediction == "FIRST_TEAM_WIN"
+        else coef_2nd_team_win
+    )
+    possible_winning = Decimal(bet.amount) * coefficient
+
+    query = (
+        bets.insert()
+        .values(
+            event_id=bet.event_id,
+            bet_prediction=bet.bet_prediction,
+            coefficient=coefficient,
+            amount=bet.amount,
+            possible_winning=possible_winning,
+            status=BetStatus.NOT_PLAYED,
+        )
+        .returning(bets)
+    )
 
     try:
-        await send_message(
-            routing_key="bet-request",
-            message=json.dumps(
-                {"request": "get_available_event_detail", "event_id": bet.event_id}
-            ),
-            queue_name=REQUEST_QUEUE_NAME,
-            correlation_id=correlation_id,
-        )
-        logger.info(
-            f"Sent request for available event detail with correlation_id: {correlation_id}"
-        )
-
-        response_data = await consume_response_from_queue(correlation_id)
-
-        if "error" in response_data:
-            logger.error(f"{response_data['error']}. event_id: {bet.event_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Available event not found.",
-            )
-
-        coef_1st_team_win = Decimal(response_data.get("coef_1st_team_win"))
-        coef_2nd_team_win = Decimal(response_data.get("coef_2nd_team_win"))
-
-        coefficient = (
-            coef_1st_team_win
-            if bet.bet_prediction == "FIRST_TEAM_WIN"
-            else coef_2nd_team_win
-        )
-        possible_winning = Decimal(bet.amount) * coefficient
-
-        query = (
-            bets.insert()
-            .values(
-                event_id=bet.event_id,
-                bet_prediction=bet.bet_prediction,
-                coefficient=coefficient,
-                amount=bet.amount,
-                possible_winning=possible_winning,
-                status=BetStatus.NOT_PLAYED,
-            )
-            .returning(bets)
-        )
-
         result = await session.execute(query)
         await session.commit()
         created_bet = result.mappings().fetchone()

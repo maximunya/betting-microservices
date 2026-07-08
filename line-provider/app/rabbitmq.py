@@ -1,16 +1,11 @@
-import asyncio
-import json
 import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Union
 
-from aio_pika import (Connection, ExchangeType, IncomingMessage, Message,
-                      connect_robust)
+from aio_pika import Connection, ExchangeType, Message, connect_robust
 
-from .config import (EXCHANGE_NAME, RABBITMQ_HOST, RABBITMQ_PASS,
-                     RABBITMQ_USER, REQUEST_QUEUE_NAME, RESPONSE_QUEUE_NAME)
-from .database import get_async_session
+from .config import EXCHANGE_NAME, RABBITMQ_HOST, RABBITMQ_PASS, RABBITMQ_USER
 
 RABBITMQ_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/"
 
@@ -35,7 +30,7 @@ async def send_message(
     message: Union[str, bytes],
     queue_name: str,
     correlation_id: str = None,
-):
+) -> None:
     connection = await get_rabbit_connection()
     async with connection:
         async with connection.channel() as channel:
@@ -53,62 +48,3 @@ async def send_message(
                 ),
                 routing_key=routing_key,
             )
-
-
-async def process_request_message(message: IncomingMessage):
-    async with message.process():
-        try:
-            request_data = json.loads(message.body.decode())
-            request_type = request_data.get("request")
-
-            async for session in get_async_session():
-                if request_type == "get_available_events":
-                    from .crud import get_available_events
-
-                    events = await get_available_events(session)
-
-                    if events is None:
-                        response_data = {"error": "Error during getting available events occurred."}
-                    else:
-                        response_data = [event.dict() for event in events]
-
-                elif request_type == "get_available_event_detail":
-                    from .crud import get_available_event_detail
-
-                    event_id = request_data.get("event_id")
-                    event = await get_available_event_detail(session, event_id)
-
-                    if event is None:
-                        response_data = {"error": "Event not found or deadline has passed"}
-                    else:
-                        response_data = event.dict()
-
-                else:
-                    logger.error(f"Unsupported request type: {request_type}")
-                    raise ValueError(f"Unsupported request type: {request_type}")
-
-                response_message = json.dumps(
-                    response_data, default=custom_json_serializer
-                )
-
-                await send_message(
-                    routing_key="event-response",
-                    message=response_message,
-                    queue_name=RESPONSE_QUEUE_NAME,
-                    correlation_id=message.correlation_id,
-                )
-
-        except Exception as e:
-            logger.error(f"Error processing request: {e}", exc_info=True)
-
-
-async def consume():
-    connection = await get_rabbit_connection()
-    async with connection:
-        channel = await connection.channel()
-        queue = await channel.declare_queue(REQUEST_QUEUE_NAME, durable=True)
-
-        await queue.consume(process_request_message)
-        logger.info("Consuming messages from queue...")
-
-        await asyncio.Future()
