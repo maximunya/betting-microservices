@@ -1,9 +1,9 @@
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
-from fastapi import status, HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import and_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -129,11 +129,11 @@ async def update_event_crud(
     if updating_event is None:
         logger.error(f"Event with id {event_id} not found", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Event not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
 
     old_status = updating_event["status"]
-    update_data = event_update.dict(exclude_unset=True)
+    update_data = event_update.model_dump(exclude_unset=True)
 
     if "status" in update_data and update_data["status"] in (
         EventStatus.FIRST_TEAM_WON,

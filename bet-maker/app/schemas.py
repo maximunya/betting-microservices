@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -41,7 +42,7 @@ class BetResponse(BaseModel):
 class EventResponse(BaseModel):
     id: int
     name: str
-    description: str
+    description: Optional[str] = None
     coef_1st_team_win: Decimal
     coef_2nd_team_win: Decimal
     timestamp: datetime
