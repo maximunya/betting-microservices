@@ -20,7 +20,7 @@ A small betting platform built as two independently deployable FastAPI services 
 
 ```
                  ┌───────────────┐        events CRUD         ┌──────────────┐
-   HTTP client ──▶ line-provider │◀──────────────────────────▶│  Postgres    │
+   HTTP client ──▶ line-provider │◀────────────────────────▶│  Postgres    │
                  │   :8001       │                            │ (per-service)│
                  └──────┬────────┘                            └──────────────┘
                         │ ▲
@@ -34,7 +34,7 @@ A small betting platform built as two independently deployable FastAPI services 
                         │ ▲
                         │ │
                  ┌──────▼───────┐        bets CRUD           ┌──────────────┐
-   HTTP client ──▶   bet-maker  │◀──────────────────────────▶│  Postgres    │
+   HTTP client ──▶   bet-maker  │◀────────────────────────▶│  Postgres    │
                  │   :8000      │                            │ (per-service)│
                  └──────┬───────┘                            └──────────────┘
                         │
@@ -130,7 +130,7 @@ bet-maker/
 ├── Dockerfile
 └── pyproject.toml
 
-line-provider/          # same shape (router.py instead of a routers/ package)
+line-provider/    # same shape (router.py instead of a routers/ package)
 ```
 
 ## Possible improvements
