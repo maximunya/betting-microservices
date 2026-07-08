@@ -1,76 +1,143 @@
 # Betting Microservices
 
-Этот небольшой проект выполнен в рамках тестового задания и представляет из себя систему, принимающую пользовательские ставки на спортивные события.
+[![CI](https://github.com/maximunya/betting-microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/maximunya/betting-microservices/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
 
-## Содержание
+A small betting platform built as two independently deployable FastAPI services that talk to each other over RabbitMQ instead of direct HTTP calls. It's a compact playground for async Python microservice patterns: request/response over a message broker, event-driven state updates between services, per-service databases, and Redis-backed response caching.
 
-- [Архитектура](#архитектура)
-- [Требования](#требования)
-- [Настройка](#настройка)
-- [Запуск](#запуск)
-- [Используемые технологии](#используемые-технологии)
+## Contents
 
-## Архитектура
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [API overview](#api-overview)
+- [Running tests](#running-tests)
+- [Project structure](#project-structure)
+- [Possible improvements](#possible-improvements)
 
-Весь проект состоит из двух микросервисов, каждый из которых выполняет определённую функцию в системе ставок:
+## Architecture
 
-- **Line Provider**: Поставляет информацию о событиях.
-- **Bet Maker**: Принимает ставки на события от пользователя.
+```
+                 ┌──────────────┐        events CRUD        ┌──────────────┐
+   HTTP client ──▶  line-provider │◀──────────────────────────▶│  Postgres    │
+                 │   :8001      │                            │ (per-service)│
+                 └──────┬───────┘                            └──────────────┘
+                        │ ▲
+      status changed    │ │ get_available_events /
+      (fire-and-forget) │ │ get_available_event_detail
+                        │ │ (RPC, reply-to queue + timeout)
+                        ▼ │
+                 ┌──────────────┐
+                 │   RabbitMQ   │
+                 └──────┬───────┘
+                        │ ▲
+                        │ │
+                 ┌──────▼───────┐        bets CRUD           ┌──────────────┐
+   HTTP client ──▶   bet-maker   │◀──────────────────────────▶│  Postgres    │
+                 │   :8000      │                            │ (per-service)│
+                 └──────┬───────┘                            └──────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │    Redis     │  (caches GET /events/ for 30s)
+                 └──────────────┘
+```
 
-Каждый сервис работает со своей отдельной базой данных (PostgreSQL). Взаимодействие между сервисами происходит асинхронно посредством обмена сообщениями через RabbitMQ.
+- **line-provider** owns sporting events: creating them, listing them, and updating their odds/deadline/status.
+- **bet-maker** owns bets: it needs live event odds to price a bet, so it asks line-provider for them over RabbitMQ using a request/response ("RPC") pattern — a private, auto-deleted reply queue per call, with a timeout, so concurrent requests can never consume each other's replies and a stalled call fails fast instead of hanging forever.
+- When line-provider settles an event (marks a team as the winner), it fires a one-way message; bet-maker's background consumer picks it up and updates the status of every affected bet (`WON`/`LOST`).
+- Each service owns its own PostgreSQL database — no shared schema, no cross-service joins.
 
-## Требования
+## Tech stack
 
-Перед началом работы убедитесь, что у вас установлены следующие компоненты:
+- **Python 3.12** / **FastAPI** — async HTTP APIs
+- **PostgreSQL** + **SQLAlchemy** (async Core) + **Alembic** — per-service storage and migrations
+- **RabbitMQ** (`aio-pika`) — inter-service messaging (RPC + fire-and-forget)
+- **Redis** (`fastapi-cache2`) — response caching
+- **Poetry** — dependency management
+- **pytest** / **httpx** — testing
+- **Docker** / **Docker Compose** — local orchestration
+- **GitHub Actions** — CI (lint + tests, one job per service)
 
-- Docker
-- Docker Compose
+## Getting started
 
-## Настройка
+Requires Docker and Docker Compose.
 
-1. **Клонируйте репозиторий:**
+```bash
+git clone https://github.com/maximunya/betting-microservices.git
+cd betting-microservices
 
-    ```bash
-    git clone https://github.com/maximunya/betting-microservices.git
-    cd betting-microservices
-    ```
+cp bet-maker/.env.docker.example bet-maker/.env.docker
+cp line-provider/.env.docker.example line-provider/.env.docker
 
-2. **Настройка окружения:**
+docker-compose up --build
+```
 
-    В директориях каждого сервиса уже есть файлы `.env.docker`. Для запуска вам не нужно вносить дополнительные изменения в эти файлы, но при необходимости вы можете настроить их под свои нужды.
+Each service applies its own Alembic migrations on startup, then serves:
 
-## Запуск
+| Service | URL | Interactive docs |
+|---|---|---|
+| line-provider | http://localhost:8001 | http://localhost:8001/docs |
+| bet-maker | http://localhost:8000 | http://localhost:8000/docs |
 
-1. **Сборка образов и запуск контейнеров:**
+Both expose `GET /health` and a Docker `HEALTHCHECK`. The `.env.docker.example` files contain working, non-secret, container-internal defaults — copying them as-is is enough to run the stack locally.
 
-    Используйте Docker и Docker Compose для сборки и запуска всех сервисов:
+## API overview
 
-    ```bash
-    docker-compose up --build
-    ```
+**line-provider**
+- `POST /events/` — create an event
+- `GET /events/` — list events (offset/limit)
+- `PUT /events/{event_id}` — update an event's odds, deadline, or status; setting a winning status locks the deadline and notifies bet-maker to settle bets
 
-    Эта команда соберет все необходимые Docker образы и запустит контейнеры в соответствии с настройками в `docker-compose.yml`.
+**bet-maker**
+- `GET /events/` — list events still open for betting, proxied from line-provider (cached 30s)
+- `POST /bets/` — place a bet (fetches the event's current odds from line-provider)
+- `GET /bets/` — list placed bets (offset/limit)
 
-2. **Проверка состояния контейнеров:**
+Full request/response schemas are available via each service's `/docs`.
 
-    Вы можете проверить состояние контейнеров с помощью команды:
+## Running tests
 
-    ```bash
-    docker-compose ps
-    ```
+Each service has its own `tests/` directory and its own dependency group. The DB layer is tested against a real Postgres (started via Compose); RabbitMQ is not required, since the RPC/messaging boundary is mocked at the test level.
 
-    Эта команда покажет статус всех запущенных контейнеров.
+```bash
+docker-compose up -d bet_maker_db line_provider_db   # exposed on localhost:5432 / :5433
 
-## Используемые технологии
+cd bet-maker      # or line-provider
+poetry install
+DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASS=postgres DB_NAME=postgres poetry run pytest
+```
 
-- **Python 3.11**: Язык программирования, используемый для написания микросервисов.
-- **FastAPI**: Фреймворк для создания API, который обеспечивает высокую производительность и поддержку современных стандартов.
-- **PostgreSQL**: Реляционная база данных, используемая для хранения данных каждого микросервиса.
-- **Alembic**: Инструмент миграции для управления изменениями в базе данных.
-- **SQLAlchemy**: ORM библиотека для работы с базой данных в Python.
-- **RabbitMQ**: Система обмена сообщениями, обеспечивающая асинхронное взаимодействие между микросервисами.
-- **Redis**: Хранилище данных в памяти, используемое для кэширования и обеспечения быстрой доступности данных. (Используется только в bet-maker для эндпоинта /events)
+(use `DB_PORT=5433` for `line-provider`). CI runs the same suite against a fresh `postgres:16` service container on every push.
 
----
+## Project structure
 
-Если у вас возникнут вопросы или проблемы, не стесняйтесь обращаться в раздел [Issues](https://github.com/maximunya/betting-microservices/issues) на GitHub.
+```
+bet-maker/
+├── app/
+│   ├── routers/        # bets.py, events.py — HTTP endpoints
+│   ├── main.py          # app setup, CORS, /health, startup/shutdown
+│   ├── config.py         # environment variables
+│   ├── database.py        # async engine/session, shared metadata
+│   ├── models.py            # SQLAlchemy Core tables
+│   ├── schemas.py             # Pydantic models
+│   ├── crud.py                  # DB access + RabbitMQ RPC calls
+│   ├── rabbitmq.py               # RabbitMQ transport (send_message, rpc_call)
+│   └── consumers.py               # background queue consumer
+├── migrations/                     # Alembic
+├── tests/
+├── Dockerfile
+└── pyproject.toml
+
+line-provider/    # same shape (router.py instead of a routers/ package)
+```
+
+## Possible improvements
+
+A few things were deliberately left as-is, or chosen for the sake of demonstrating a pattern rather than being the "best" production choice:
+
+- **RPC over RabbitMQ for a synchronous read** (`GET /bet-maker/events/`) is here to show the messaging pattern. A production system fronting a browser client would more likely have bet-maker call line-provider directly (or through a gateway) for this kind of read, and reserve the broker for genuinely asynchronous events like the settlement notification.
+- **No authentication/authorization** — out of scope for what this project demonstrates.
+- **Offset/limit pagination only** — no cursor pagination or total-count headers on list endpoints.
+- **Shared enums duplicated per service** (`BetStatus`, `EventStatus`, …) — an intentional microservice-boundary tradeoff (no shared library dependency between services), worth revisiting if they start to drift.
