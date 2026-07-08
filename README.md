@@ -19,10 +19,10 @@ A small betting platform built as two independently deployable FastAPI services 
 ## Architecture
 
 ```
-                 ┌──────────────┐        events CRUD        ┌──────────────┐
-   HTTP client ──▶  line-provider │◀──────────────────────────▶│  Postgres    │
-                 │   :8001      │                            │ (per-service)│
-                 └──────┬───────┘                            └──────────────┘
+                 ┌───────────────┐        events CRUD         ┌──────────────┐
+   HTTP client ──▶ line-provider │◀──────────────────────────▶│  Postgres    │
+                 │   :8001       │                            │ (per-service)│
+                 └──────┬────────┘                            └──────────────┘
                         │ ▲
       status changed    │ │ get_available_events /
       (fire-and-forget) │ │ get_available_event_detail
@@ -34,7 +34,7 @@ A small betting platform built as two independently deployable FastAPI services 
                         │ ▲
                         │ │
                  ┌──────▼───────┐        bets CRUD           ┌──────────────┐
-   HTTP client ──▶   bet-maker   │◀──────────────────────────▶│  Postgres    │
+   HTTP client ──▶   bet-maker  │◀──────────────────────────▶│  Postgres    │
                  │   :8000      │                            │ (per-service)│
                  └──────┬───────┘                            └──────────────┘
                         │
@@ -117,20 +117,20 @@ DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_PASS=postgres DB_NAME=postgre
 bet-maker/
 ├── app/
 │   ├── routers/        # bets.py, events.py — HTTP endpoints
-│   ├── main.py          # app setup, CORS, /health, startup/shutdown
-│   ├── config.py         # environment variables
-│   ├── database.py        # async engine/session, shared metadata
-│   ├── models.py            # SQLAlchemy Core tables
-│   ├── schemas.py             # Pydantic models
-│   ├── crud.py                  # DB access + RabbitMQ RPC calls
-│   ├── rabbitmq.py               # RabbitMQ transport (send_message, rpc_call)
-│   └── consumers.py               # background queue consumer
-├── migrations/                     # Alembic
+│   ├── main.py         # app setup, CORS, /health, startup/shutdown
+│   ├── config.py       # environment variables
+│   ├── database.py     # async engine/session, shared metadata
+│   ├── models.py       # SQLAlchemy Core tables
+│   ├── schemas.py      # Pydantic models
+│   ├── crud.py         # DB access + RabbitMQ RPC calls
+│   ├── rabbitmq.py     # RabbitMQ transport (send_message, rpc_call)
+│   └── consumers.py    # background queue consumer
+├── migrations/         # Alembic
 ├── tests/
 ├── Dockerfile
 └── pyproject.toml
 
-line-provider/    # same shape (router.py instead of a routers/ package)
+line-provider/          # same shape (router.py instead of a routers/ package)
 ```
 
 ## Possible improvements
