@@ -7,6 +7,7 @@ venv/
 *.log
 *.bak
 *.swp
+*.swo
 .idea/
 .editorconfig
-versions/
+tests/

@@ -1,6 +1,6 @@
 services:
   bet_maker_db:
-    image: postgres
+    image: postgres:16
     container_name: bet_maker_db
     environment:
       POSTGRES_USER: postgres
@@ -9,6 +9,9 @@ services:
     restart: always
     networks:
       - backend_network
+    # Exposed on the host so the test suite can be run outside of Docker too.
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -19,7 +22,7 @@ services:
       - pgdata_bet_maker:/var/lib/postgresql/data
 
   line_provider_db:
-    image: postgres
+    image: postgres:16
     container_name: line_provider_db
     environment:
       POSTGRES_USER: postgres
@@ -28,6 +31,8 @@ services:
     restart: always
     networks:
       - backend_network
+    ports:
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -81,7 +86,12 @@ services:
     restart: always
     networks:
       - backend_network
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   line_provider:
     build: ./line-provider
@@ -100,7 +110,12 @@ services:
     restart: always
     networks:
       - backend_network
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   pgdata_bet_maker:
