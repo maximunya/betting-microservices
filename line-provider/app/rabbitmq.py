@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -14,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 async def get_rabbit_connection() -> Connection:
     return await connect_robust(RABBITMQ_URL)
+
+
+async def connect_with_retry(max_attempts: int = 10, delay: float = 3.0) -> Connection:
+    """
+    aio_pika.connect_robust only reconnects after the first connection succeeds,
+    so we need to retry that first attempt by ourselves.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await get_rabbit_connection()
+        except Exception as e:
+            if attempt == max_attempts:
+                raise
+            logger.warning(
+                f"RabbitMQ not reachable yet (attempt {attempt}/{max_attempts}): {e}"
+            )
+            await asyncio.sleep(delay)
 
 
 def custom_json_serializer(obj):

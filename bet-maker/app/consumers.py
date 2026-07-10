@@ -7,7 +7,7 @@ from aio_pika import IncomingMessage
 from .config import EVENT_UPDATE_QUEUE_NAME
 from .crud import update_bets_status
 from .database import get_async_session
-from .rabbitmq import get_rabbit_connection
+from .rabbitmq import connect_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def process_event_update_message(message: IncomingMessage) -> None:
 
 
 async def consume() -> None:
-    connection = await get_rabbit_connection()
+    connection = await connect_with_retry()
     async with connection:
         channel = await connection.channel()
 

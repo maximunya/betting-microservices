@@ -8,7 +8,7 @@ from aio_pika.abc import AbstractChannel
 from .config import REQUEST_QUEUE_NAME
 from .crud import get_available_event_detail, get_available_events
 from .database import get_async_session
-from .rabbitmq import custom_json_serializer, get_rabbit_connection
+from .rabbitmq import connect_with_retry, custom_json_serializer
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ async def process_request_message(
 
 
 async def consume() -> None:
-    connection = await get_rabbit_connection()
+    connection = await connect_with_retry()
     async with connection:
         channel = await connection.channel()
         queue = await channel.declare_queue(REQUEST_QUEUE_NAME, durable=True)
