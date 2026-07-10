@@ -68,8 +68,7 @@ Requires Docker and Docker Compose.
 git clone https://github.com/maximunya/betting-microservices.git
 cd betting-microservices
 
-cp bet-maker/.env.docker.example bet-maker/.env.docker
-cp line-provider/.env.docker.example line-provider/.env.docker
+cp .env.example .env
 
 docker-compose up --build
 ```
@@ -81,7 +80,7 @@ Each service applies its own Alembic migrations on startup, then serves:
 | line-provider | http://localhost:8001 | http://localhost:8001/docs |
 | bet-maker | http://localhost:8000 | http://localhost:8000/docs |
 
-Both expose `GET /health` and a Docker `HEALTHCHECK`. The `.env.docker.example` files contain working, non-secret, container-internal defaults — copying them as-is is enough to run the stack locally.
+Both expose `GET /health` and a Docker `HEALTHCHECK`. `.env` is the single source of truth for the whole stack. `.env.example` contains working, non-secret, container-internal defaults — copying it as-is is enough to run the stack locally.
 
 ## API overview
 
