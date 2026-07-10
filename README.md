@@ -1,8 +1,8 @@
 # Betting Microservices
 
 [![CI](https://github.com/maximunya/betting-microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/maximunya/betting-microservices/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A small betting platform built as two independently deployable FastAPI services that talk to each other over RabbitMQ instead of direct HTTP calls. It's a compact playground for async Python microservice patterns: request/response over a message broker, event-driven state updates between services, per-service databases, and Redis-backed response caching.
 
